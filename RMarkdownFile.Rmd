@@ -11,20 +11,109 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+This is an R Markdown document.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+The goal of this project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. I will create a report describing how I have built my model, how I have used cross validation, what I think the expected out of sample error is, and why I have made the choices I did. I will also use your prediction model to predict 20 different test cases.
 
-```{r cars}
-summary(cars)
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: 
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+loading the required packages
+```{r}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(readr)) install.packages("readr", repos = "http://cran.us.r-project.org")
+if(!require(randomForest)) install.packages("randonForest", repos = "http://cran.us.r-project.org")
+if(!require(gbm)) install.packages("gbm", repos = "http://cran.us.r-project.org")
+
 ```
 
-## Including Plots
+importing data
+```{r}
+training <- read_csv("rawData/pml-training.csv")
+validation <- read_csv("rawData/pml-testing.csv")
+```
+printing the dimensions of training and validation set
+```{r}
+dim(training)
+dim(validation)
+```
+removing NearlyZeroVariance variables
+```{r}
+nzv <- nearZeroVar(training)
 
-You can also embed plots, for example:
+training <- training[,-nzv]
+validation <- validation[,-nzv]
+```
+printing the new dimensions of training and validation set after removing nearZeroVariance variables
+```{r}
+dim(training)
+dim(validation)
+```
+Removing variables with large NAs
+```{r}
+nasCol <- sapply(training, function(x) mean(is.na(x)) > 0.95)
+training <- training[,nasCol == F]
+validation <- validation[,nasCol == F]
+```
+printing the new dimensions of training and validation set after removing variables with large NAs
+```{r}
+dim(training)
+dim(validation)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```
+structure of the data
+```{r}
+str(training)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+removing columns with id information only (col 1 through 5)
+```{r}
+training <- training %>% select(6:59)
+validation <- validation %>% select(6:59)
+```
+splitting training data into training and test set
+```{r}
+inTrain <- createDataPartition(training$classe, p = 0.7, list = F)
+test <- training[-inTrain,]
+training <- training[inTrain,]
+```
+predicting with random forests
+```{r}
+fitRF <- train(classe~., data = training, method = "rf", trControl = trainControl(method = "cv", number = 3))
+fitRF$finalModel
+```
+testing on test set
+```{r}
+predictTestRF <- predict(fitRF, test)
+resultRF <- confusionMatrix(table(predictTestRF, test$classe))
+```
+plotting the result
+```{r}
+plot(resultRF$table, col = resultRF$byClass,  main = paste("Random Forest Accuracy =", round(resultRF$overall['Accuracy'], 4)))
+```
+predicting with random forests
+```{r}
+fitGbm <- train(classe~., data = training, method = "gbm", trControl = trainControl(method = "repeatedcv", number = 5, repeats = 1))
+fitGbm$finalModel
+```
+testing on test set
+```{r}
+predictTestGbm <- predict(fitGbm, test)
+resultGbm <- confusionMatrix(table(predictTestGbm, test$classe))
+```
+plotting the result
+```{r}
+plot(resultGbm$table, col = resultGbm$byClass,  main = paste("GBM Accuracy =", round(resultGbm$overall['Accuracy'], 4)))
+
+```
+RF accuracy is better. Hence, applying the fitRF model to validation set
+```{r}
+predictVal <- predict(fitRF, validation)
+predictVal
+```
